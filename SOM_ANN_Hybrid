@@ -1,0 +1,106 @@
+
+# Hybrid Deep Learning Model: ANN + SOM - a more advanced deep learning model
+# Predicting the probability that each credit card applicant cheated
+
+
+# Import Packages
+import os
+import numpy as np
+import pandas as pd
+
+import matplotlib.pyplot as plt
+
+from keras.models import Sequential
+from keras.layers import Dense
+
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
+
+from minisom import MiniSom
+from pylab import bone, pcolor, colorbar, plot, show
+
+
+# Part 1 - Identify Frauds using SOM
+
+# Import Dataset
+dataset = pd.read_csv('Credit_Card_Applications.csv')
+
+X = dataset.iloc[:, :-1].values
+y = dataset.iloc[:, -1].values
+
+# Feature Scaling
+sc = MinMaxScaler(feature_range=(0, 1))
+X = sc.fit_transform(X)
+
+# Train SOM: 10 X 10 grid, 15 features in X, sigma = radius
+som = MiniSom(x = 10, y = 10, input_len = 15, sigma = 1.0, learning_rate = 0.5)
+
+# Initialize weights
+som.random_weights_init(X)
+som.train_random(data = X, num_iteration = 100)
+
+# Identify Outlier Neurons: Visualize the Results
+bone()
+pcolor(som.distance_map().T)
+colorbar()
+markers = ['o', 's']
+colors = ['r', 'g']
+
+for i, x in enumerate(X):
+    w = som.winner(x)
+    plot(w[0] + 0.5,
+         w[1] + 0.5,
+         markers[y[i]],
+         markeredgecolor = colors[y[i]],
+         markerfacecolor = 'None',
+         markersize = 10,
+         markeredgewidth = 2)
+show()
+
+# Finding the Frauds
+mappings = som.win_map(X)
+
+# Get list of potential frauds
+frauds = np.concatenate((mappings[(4, 1)], mappings[(1, 2)], mappings[(2, 2)]), axis = 0)
+frauds = sc.inverse_transform(frauds)
+
+
+# Part 2 - Going from Unsupervised to Supervised Deep Learning
+
+# Create Matrix of Features
+customers = dataset.iloc[:, 1:].values
+
+# Create Dependent Variable
+is_fraud = np.zeros(len(dataset))
+
+#check if customer ID belongs to the list of frauds, and replace 0 with 1
+for i in range(len(dataset)):
+    if dataset.iloc[i, 0] in frauds:
+        is_fraud[i] = 1
+
+# Feature Scaling
+sc = StandardScaler()
+customers = sc.fit_transform(customers)
+
+
+# Part 2 - Build ANN
+
+# Initialize ANN
+classifier = Sequential()
+
+# Add Input Layer and First Hidden Layer
+classifier.add(Dense(units=2, kernel_initialzer = 'uniform', activation='relu', input_dim = 15))
+
+# Add Output Layer
+classifier.add(Dense(units=1, kernel_initialzer = 'uniform', activation='sigmoid'))
+
+# Compile ANN: Optimizer and Loss Function
+classifier.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# Train ANN on Training Set
+classifier.fit(customers, is_fraud, batch_size=1, epochs=2)
+
+# Predict Probabilities of Fraud
+y_pred = classifier.predict(customers)
+y_pred = np.concatenate((dataset.iloc[:, 0:1].values, y_pred), axis = 1)
+y_pred = y_pred[y_pred[:, 1].argsort()]
